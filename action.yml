@@ -1,0 +1,105 @@
+# Copyright 2026 Fractalyze Authors.
+# SPDX-License-Identifier: Apache-2.0
+
+name: "ZK Benchmark"
+description: "Run benchmarks, detect regressions, and report results"
+author: "Fractalyze"
+
+branding:
+  icon: "activity"
+  color: "blue"
+
+inputs:
+  benchmark_cmd:
+    description: "Command to run the benchmark (must output JSON to benchmark_results.json)"
+    required: true
+  implementation:
+    description: "Implementation name (e.g., whir-zorch, plonky3)"
+    required: true
+  regression_threshold:
+    description: "Regression threshold as decimal (e.g., 0.10 for 10%)"
+    required: false
+    default: "0.10"
+  baseline_path:
+    description: "Path to baseline JSON file for regression detection"
+    required: false
+    default: "benchmark_data/baseline.json"
+  results_file:
+    description: "Path to output benchmark results JSON"
+    required: false
+    default: "benchmark_results.json"
+  slack_webhook:
+    description: "Slack webhook URL for regression alerts"
+    required: false
+    default: ""
+  store_results:
+    description: "Whether to store results (true on main branch)"
+    required: false
+    default: "false"
+  results_dir:
+    description: "Directory to store historical results"
+    required: false
+    default: "benchmark_data"
+
+outputs:
+  has_regression:
+    description: "Whether a regression was detected"
+    value: ${{ steps.regression.outputs.has_regression }}
+  results_file:
+    description: "Path to benchmark results JSON"
+    value: ${{ inputs.results_file }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Run benchmark
+      shell: bash
+      run: ${{ inputs.benchmark_cmd }}
+
+    - name: Verify test vectors
+      shell: bash
+      run: |
+        python3 ${{ github.action_path }}/scripts/verify_test_vectors.py \
+          --results="${{ inputs.results_file }}"
+
+    - name: Detect regression
+      id: regression
+      shell: bash
+      env:
+        REGRESSION_THRESHOLD: ${{ inputs.regression_threshold }}
+        BASELINE_PATH: ${{ inputs.baseline_path }}
+        RESULTS_FILE: ${{ inputs.results_file }}
+      run: |
+        python3 ${{ github.action_path }}/scripts/detect_regression.py
+
+    - name: Store results
+      if: inputs.store_results == 'true'
+      shell: bash
+      run: |
+        mkdir -p "${{ inputs.results_dir }}"
+        TIMESTAMP=$(date -u +%Y%m%dT%H%M%S)
+        cp "${{ inputs.results_file }}" "${{ inputs.results_dir }}/${TIMESTAMP}.json"
+        cp "${{ inputs.results_file }}" "${{ inputs.results_dir }}/baseline.json"
+
+    - name: Send Slack alert
+      if: failure() || steps.regression.outputs.has_regression == 'true'
+      shell: bash
+      env:
+        SLACK_WEBHOOK_URL: ${{ inputs.slack_webhook }}
+        RESULTS_FILE: ${{ inputs.results_file }}
+        GITHUB_SERVER_URL: ${{ github.server_url }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_RUN_ID: ${{ github.run_id }}
+      run: |
+        if [ -n "$SLACK_WEBHOOK_URL" ]; then
+          python3 ${{ github.action_path }}/scripts/send_slack_alert.py
+        else
+          echo "SLACK_WEBHOOK_URL not set, skipping alert"
+        fi
+
+    - name: Post summary
+      shell: bash
+      env:
+        RESULTS_FILE: ${{ inputs.results_file }}
+      run: |
+        python3 ${{ github.action_path }}/scripts/post_summary.py >> $GITHUB_STEP_SUMMARY

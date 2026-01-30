@@ -1,0 +1,118 @@
+# ZK Benchmark Action
+
+Reusable GitHub Action for running ZK benchmarks with regression detection.
+
+## Features
+
+- Run any benchmark command that outputs JSON
+- Verify test vectors
+- Detect performance regressions against baseline
+- Store historical results
+- Send Slack alerts on regression
+- Generate GitHub step summary
+
+## Usage
+
+```yaml
+- uses: fractalyze/benchmark-action@v1
+  with:
+    benchmark_cmd: |
+      bazel run //benchmark:poseidon2_benchmark -- \
+        --output=benchmark_results.json
+    implementation: whir-zorch
+    regression_threshold: "0.10"
+    slack_webhook: ${{ secrets.SLACK_BENCHMARK_WEBHOOK }}
+    store_results: ${{ github.ref == 'refs/heads/main' }}
+```
+
+## Inputs
+
+| Input | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `benchmark_cmd` | Yes | - | Command to run benchmark (must output JSON) |
+| `implementation` | Yes | - | Implementation name (e.g., whir-zorch) |
+| `regression_threshold` | No | `0.10` | Regression threshold as decimal |
+| `baseline_path` | No | `benchmark_data/baseline.json` | Path to baseline JSON |
+| `results_file` | No | `benchmark_results.json` | Output results file path |
+| `slack_webhook` | No | `""` | Slack webhook URL for alerts |
+| `store_results` | No | `false` | Store results to results_dir |
+| `results_dir` | No | `benchmark_data` | Directory for historical results |
+
+## Outputs
+
+| Output | Description |
+|--------|-------------|
+| `has_regression` | `true` if regression detected |
+| `results_file` | Path to benchmark results JSON |
+
+## JSON Schema
+
+The benchmark command must output JSON matching this schema:
+
+```json
+{
+  "metadata": {
+    "implementation": "whir-zorch",
+    "version": "0.1.0",
+    "commit_sha": "abc123...",
+    "timestamp": "2026-01-30T12:00:00Z",
+    "platform": {
+      "os": "linux",
+      "arch": "x86_64",
+      "cpu_count": 32,
+      "cpu_vendor": "AMD Ryzen..."
+    }
+  },
+  "benchmarks": {
+    "benchmark_name": {
+      "latency": { "value": 120.5, "unit": "ns" },
+      "throughput": { "value": 8300.0, "unit": "ops/s" },
+      "iterations": 1000,
+      "test_vectors": {
+        "input_hash": "sha256...",
+        "output_hash": "sha256...",
+        "verified": true
+      },
+      "metadata": {
+        "field": "BabyBear",
+        "width": 16
+      }
+    }
+  }
+}
+```
+
+## Example Workflow
+
+```yaml
+name: Benchmark
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 2 * * *"
+
+jobs:
+  benchmark:
+    runs-on: [self-hosted, benchmark]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: fractalyze/benchmark-action@v1
+        with:
+          benchmark_cmd: |
+            cargo run --release -p my-bench -- --output=benchmark_results.json
+          implementation: my-implementation
+          slack_webhook: ${{ secrets.SLACK_BENCHMARK_WEBHOOK }}
+          store_results: ${{ github.ref == 'refs/heads/main' }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmark_results.json
+```
+
+## License
+
+Apache-2.0
