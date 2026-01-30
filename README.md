@@ -27,23 +27,23 @@ Reusable GitHub Action for running ZK benchmarks with regression detection.
 
 ## Inputs
 
-| Input | Required | Default | Description |
-|-------|----------|---------|-------------|
-| `benchmark_cmd` | Yes | - | Command to run benchmark (must output JSON) |
-| `implementation` | Yes | - | Implementation name (e.g., whir-zorch) |
-| `regression_threshold` | No | `0.10` | Regression threshold as decimal |
-| `baseline_path` | No | `benchmark_data/baseline.json` | Path to baseline JSON |
-| `results_file` | No | `benchmark_results.json` | Output results file path |
-| `slack_webhook` | No | `""` | Slack webhook URL for alerts |
-| `store_results` | No | `false` | Store results to results_dir |
-| `results_dir` | No | `benchmark_data` | Directory for historical results |
+| Input                  | Required | Default                        | Description                                 |
+| ---------------------- | -------- | ------------------------------ | ------------------------------------------- |
+| `benchmark_cmd`        | Yes      | -                              | Command to run benchmark (must output JSON) |
+| `implementation`       | Yes      | -                              | Implementation name (e.g., whir-zorch)      |
+| `regression_threshold` | No       | `0.10`                         | Regression threshold as decimal             |
+| `baseline_path`        | No       | `benchmark_data/baseline.json` | Path to baseline JSON                       |
+| `results_file`         | No       | `benchmark_results.json`       | Output results file path                    |
+| `slack_webhook`        | No       | `""`                           | Slack webhook URL for alerts                |
+| `store_results`        | No       | `false`                        | Store results to results_dir                |
+| `results_dir`          | No       | `benchmark_data`               | Directory for historical results            |
 
 ## Outputs
 
-| Output | Description |
-|--------|-------------|
-| `has_regression` | `true` if regression detected |
-| `results_file` | Path to benchmark results JSON |
+| Output           | Description                    |
+| ---------------- | ------------------------------ |
+| `has_regression` | `true` if regression detected  |
+| `results_file`   | Path to benchmark results JSON |
 
 ## JSON Schema
 
@@ -111,6 +111,14 @@ jobs:
         with:
           name: benchmark-results
           path: benchmark_results.json
+```
+
+## Testing
+
+Run the unit tests with pytest:
+
+```bash
+cd scripts && python -m pytest -v
 ```
 
 ## License
