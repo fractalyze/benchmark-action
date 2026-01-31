@@ -10,6 +10,7 @@ Reusable GitHub Action for running ZK benchmarks with regression detection.
 - Store historical results
 - Send Slack alerts on regression
 - Generate GitHub step summary
+- System load pre-check (CPU and memory)
 
 ## Usage
 
@@ -37,6 +38,8 @@ Reusable GitHub Action for running ZK benchmarks with regression detection.
 | `slack_webhook`        | No       | `""`                           | Slack webhook URL for alerts                |
 | `store_results`        | No       | `false`                        | Store results to results_dir                |
 | `results_dir`          | No       | `benchmark_data`               | Directory for historical results            |
+| `cpu_load_threshold`   | No       | `0.80`                         | CPU load threshold for warning (0-1)        |
+| `memory_threshold`     | No       | `0.80`                         | Memory usage threshold for warning (0-1)    |
 
 ## Outputs
 
@@ -44,6 +47,8 @@ Reusable GitHub Action for running ZK benchmarks with regression detection.
 | ---------------- | ------------------------------ |
 | `has_regression` | `true` if regression detected  |
 | `results_file`   | Path to benchmark results JSON |
+| `cpu_load`       | Normalized CPU load (0-1)      |
+| `memory_usage`   | Memory usage ratio (0-1)       |
 
 ## JSON Schema
 

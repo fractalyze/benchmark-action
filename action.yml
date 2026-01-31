@@ -40,6 +40,14 @@ inputs:
     description: "Directory to store historical results"
     required: false
     default: "benchmark_data"
+  cpu_load_threshold:
+    description: "CPU load threshold (0-1) above which to emit warning"
+    required: false
+    default: "0.80"
+  memory_threshold:
+    description: "Memory usage threshold (0-1) above which to emit warning"
+    required: false
+    default: "0.80"
 
 outputs:
   has_regression:
@@ -48,10 +56,25 @@ outputs:
   results_file:
     description: "Path to benchmark results JSON"
     value: ${{ inputs.results_file }}
+  cpu_load:
+    description: "Normalized CPU load (0-1)"
+    value: ${{ steps.system_load.outputs.cpu_load }}
+  memory_usage:
+    description: "Memory usage ratio (0-1)"
+    value: ${{ steps.system_load.outputs.memory_usage }}
 
 runs:
   using: "composite"
   steps:
+    - name: Check system load
+      id: system_load
+      shell: bash
+      env:
+        CPU_LOAD_THRESHOLD: ${{ inputs.cpu_load_threshold }}
+        MEMORY_THRESHOLD: ${{ inputs.memory_threshold }}
+        SYSTEM_LOAD_OUTPUT: system_load.json
+      run: python3 ${{ github.action_path }}/scripts/check_system_load.py
+
     - name: Run benchmark
       shell: bash
       run: ${{ inputs.benchmark_cmd }}
