@@ -54,13 +54,22 @@ def main() -> int:
     for name, bench in data.get("benchmarks", {}).items():
         lat = bench.get("latency", {}).get("value", "N/A")
         thr = bench.get("throughput", {}).get("value", "N/A")
-        mem = bench.get("memory", {}).get("value", "N/A")
+        mem_data = bench.get("memory", {})
+        mem = mem_data.get("value", "N/A")
+        mem_unit = mem_data.get("unit", "bytes")
         tv = bench.get("test_vectors", {})
         ver = tv.get("verified", False) if tv else False
 
         lat_str = f"{lat:.2f}" if isinstance(lat, (int, float)) else lat
         thr_str = f"{thr:.0f}" if isinstance(thr, (int, float)) else thr
-        mem_str = f"{mem:.1f}" if isinstance(mem, (int, float)) else mem
+        # Convert bytes to MB
+        if isinstance(mem, (int, float)) and mem_unit == "bytes":
+            mem_mb = mem / (1024 * 1024)
+            mem_str = f"{mem_mb:.2f}"
+        elif isinstance(mem, (int, float)):
+            mem_str = f"{mem:.2f}"
+        else:
+            mem_str = mem
         ver_str = "Yes" if ver else "No"
 
         print(f"| {name} | {lat_str} | {thr_str} | {mem_str} | {ver_str} |")
