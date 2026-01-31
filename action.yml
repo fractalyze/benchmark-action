@@ -52,6 +52,14 @@ inputs:
     description: "Number of historical results to average for baseline"
     required: false
     default: "5"
+  anthropic_api_key:
+    description: "Anthropic API key for Claude AI analysis"
+    required: false
+    default: ""
+  ai_model:
+    description: "Claude model to use for analysis"
+    required: false
+    default: "claude-opus-4-5-20251101"
 
 outputs:
   has_regression:
@@ -98,6 +106,18 @@ runs:
         RESULTS_FILE: ${{ inputs.results_file }}
       run: |
         python3 ${{ github.action_path }}/scripts/detect_regression.py
+
+    - name: AI performance analysis
+      if: inputs.anthropic_api_key != ''
+      shell: bash
+      env:
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic_api_key }}
+        AI_MODEL: ${{ inputs.ai_model }}
+        REGRESSION_THRESHOLD: ${{ inputs.regression_threshold }}
+        BASELINE_PATH: ${{ inputs.baseline_path }}
+        RESULTS_FILE: ${{ inputs.results_file }}
+        AI_ANALYSIS_OUTPUT: ai_analysis.md
+      run: python3 ${{ github.action_path }}/scripts/ai_analysis.py >> $GITHUB_STEP_SUMMARY
 
     - name: Store results
       if: inputs.store_results == 'true'

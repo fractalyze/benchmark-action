@@ -12,6 +12,7 @@ Reusable GitHub Action for running ZK benchmarks with regression detection.
 - Generate GitHub step summary
 - System load pre-check (CPU and memory)
 - Rolling average baseline from historical results
+- Claude AI performance analysis
 
 ## Usage
 
@@ -42,6 +43,8 @@ Reusable GitHub Action for running ZK benchmarks with regression detection.
 | `cpu_load_threshold`   | No       | `0.80`                         | CPU load threshold for warning (0-1)        |
 | `memory_threshold`     | No       | `0.80`                         | Memory usage threshold for warning (0-1)    |
 | `rolling_window`       | No       | `5`                            | Number of historical results for baseline   |
+| `anthropic_api_key`    | No       | `""`                           | Anthropic API key for Claude AI analysis    |
+| `ai_model`             | No       | `claude-opus-4-5-20251101`     | Claude model to use for analysis            |
 
 ## Outputs
 
