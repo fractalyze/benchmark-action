@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import urllib.request
+from pathlib import Path
 
 
 def main() -> int:
@@ -48,6 +49,32 @@ def main() -> int:
         blocks.append(
             {"type": "section", "text": {"type": "mrkdwn", "text": f"*{name}*: {lat_str}"}}
         )
+
+    # Include AI analysis if available
+    ai_analysis_file = Path(os.environ.get("AI_ANALYSIS_OUTPUT", "ai_analysis.md"))
+    if ai_analysis_file.exists():
+        analysis_text = ai_analysis_file.read_text().strip()
+        # Extract just the analysis section (skip markdown headers for Slack)
+        lines = analysis_text.split("\n")
+        analysis_lines = []
+        in_analysis = False
+        for line in lines:
+            if line.startswith("### Analysis"):
+                in_analysis = True
+                continue
+            if in_analysis and line.startswith("##"):
+                break
+            if in_analysis and line.strip():
+                analysis_lines.append(line)
+
+        if analysis_lines:
+            analysis_summary = "\n".join(analysis_lines[:5])  # Limit to 5 lines
+            blocks.append(
+                {
+                    "type": "section",
+                    "text": {"type": "mrkdwn", "text": f"*AI Analysis:*\n{analysis_summary}"},
+                }
+            )
 
     blocks.append(
         {

@@ -140,6 +140,7 @@ runs:
         GITHUB_SERVER_URL: ${{ github.server_url }}
         GITHUB_REPOSITORY: ${{ github.repository }}
         GITHUB_RUN_ID: ${{ github.run_id }}
+        AI_ANALYSIS_OUTPUT: ai_analysis.md
       run: |
         if [ -n "$SLACK_WEBHOOK_URL" ]; then
           python3 ${{ github.action_path }}/scripts/send_slack_alert.py
@@ -151,5 +152,6 @@ runs:
       shell: bash
       env:
         RESULTS_FILE: ${{ inputs.results_file }}
+        SYSTEM_LOAD_OUTPUT: system_load.json
       run: |
         python3 ${{ github.action_path }}/scripts/post_summary.py >> $GITHUB_STEP_SUMMARY

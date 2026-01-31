@@ -7,6 +7,35 @@ from __future__ import annotations
 import json
 import os
 import sys
+from pathlib import Path
+
+
+def print_system_load_info() -> None:
+    """Print system load information if available."""
+    system_load_file = Path(os.environ.get("SYSTEM_LOAD_OUTPUT", "system_load.json"))
+    if not system_load_file.exists():
+        return
+
+    with open(system_load_file) as f:
+        data = json.load(f)
+
+    cpu = data.get("cpu", {})
+    mem = data.get("memory", {})
+
+    cpu_load = cpu.get("normalized_load", 0)
+    cpu_warning = cpu.get("warning", False)
+    mem_usage = mem.get("usage_ratio", 0)
+    mem_warning = mem.get("warning", False)
+
+    cpu_icon = "::warning::" if cpu_warning else ""
+    mem_icon = "::warning::" if mem_warning else ""
+
+    print("## System Load\n")
+    print("| Metric | Value | Status |")
+    print("|--------|-------|--------|")
+    print(f"| CPU Load | {cpu_load:.1%} | {cpu_icon + 'High' if cpu_warning else 'OK'} |")
+    print(f"| Memory | {mem_usage:.1%} | {mem_icon + 'High' if mem_warning else 'OK'} |")
+    print()
 
 
 def main() -> int:
@@ -14,6 +43,9 @@ def main() -> int:
 
     with open(results_file) as f:
         data = json.load(f)
+
+    # Print system load info first
+    print_system_load_info()
 
     print("## Benchmark Results\n")
     print("| Benchmark | Latency (ns) | Throughput (ops/s) | Verified |")

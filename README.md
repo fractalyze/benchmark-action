@@ -114,6 +114,11 @@ jobs:
           benchmark_cmd: |
             cargo run --release -p my-bench -- --output=benchmark_results.json
           implementation: my-implementation
+          regression_threshold: "0.10"
+          rolling_window: "5"
+          cpu_load_threshold: "0.80"
+          memory_threshold: "0.80"
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           slack_webhook: ${{ secrets.SLACK_BENCHMARK_WEBHOOK }}
           store_results: ${{ github.ref == 'refs/heads/main' }}
 
