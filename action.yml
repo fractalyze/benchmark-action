@@ -48,6 +48,10 @@ inputs:
     description: "Memory usage threshold (0-1) above which to emit warning"
     required: false
     default: "0.80"
+  rolling_window:
+    description: "Number of historical results to average for baseline"
+    required: false
+    default: "5"
 
 outputs:
   has_regression:
@@ -98,11 +102,14 @@ runs:
     - name: Store results
       if: inputs.store_results == 'true'
       shell: bash
+      env:
+        RESULTS_DIR: ${{ inputs.results_dir }}
+        ROLLING_WINDOW: ${{ inputs.rolling_window }}
       run: |
         mkdir -p "${{ inputs.results_dir }}"
         TIMESTAMP=$(date -u +%Y%m%dT%H%M%S)
         cp "${{ inputs.results_file }}" "${{ inputs.results_dir }}/${TIMESTAMP}.json"
-        cp "${{ inputs.results_file }}" "${{ inputs.results_dir }}/baseline.json"
+        python3 ${{ github.action_path }}/scripts/calculate_rolling_baseline.py
 
     - name: Send Slack alert
       if: failure() || steps.regression.outputs.has_regression == 'true'
