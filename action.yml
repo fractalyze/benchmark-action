@@ -60,6 +60,14 @@ inputs:
     description: "Claude model to use for analysis"
     required: false
     default: "claude-opus-4-5-20251101"
+  dashboard_token:
+    description: "GitHub token for triggering dashboard updates"
+    required: false
+    default: ""
+  dashboard_repo:
+    description: "Dashboard repository (owner/repo)"
+    required: false
+    default: "fractalyze/benchmark-dashboard"
 
 outputs:
   has_regression:
@@ -155,3 +163,18 @@ runs:
         SYSTEM_LOAD_OUTPUT: system_load.json
       run: |
         python3 ${{ github.action_path }}/scripts/post_summary.py >> $GITHUB_STEP_SUMMARY
+
+    - name: Trigger dashboard update
+      if: inputs.store_results == 'true' && inputs.dashboard_token != ''
+      shell: bash
+      env:
+        DASHBOARD_TOKEN: ${{ inputs.dashboard_token }}
+        DASHBOARD_REPO: ${{ inputs.dashboard_repo }}
+        IMPLEMENTATION: ${{ inputs.implementation }}
+      run: |
+        curl -s -X POST \
+          -H "Authorization: token $DASHBOARD_TOKEN" \
+          -H "Accept: application/vnd.github.v3+json" \
+          "https://api.github.com/repos/$DASHBOARD_REPO/dispatches" \
+          -d "{\"event_type\":\"benchmark-updated\",\"client_payload\":{\"implementation\":\"$IMPLEMENTATION\"}}"
+        echo "Triggered dashboard update for $IMPLEMENTATION"
