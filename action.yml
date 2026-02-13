@@ -134,10 +134,17 @@ runs:
         RESULTS_DIR: ${{ inputs.results_dir }}
         ROLLING_WINDOW: ${{ inputs.rolling_window }}
       run: |
-        mkdir -p "${{ inputs.results_dir }}"
+        mkdir -p "$RESULTS_DIR"
         TIMESTAMP=$(date -u +%Y%m%dT%H%M%S)
-        cp "${{ inputs.results_file }}" "${{ inputs.results_dir }}/${TIMESTAMP}.json"
+        cp "${{ inputs.results_file }}" "$RESULTS_DIR/${TIMESTAMP}.json"
         python3 ${{ github.action_path }}/scripts/calculate_rolling_baseline.py
+
+        # Push benchmark data so the dashboard can collect it via API.
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git add "$RESULTS_DIR"
+        git commit -m "chore: store benchmark results [skip ci]" || true
+        git push
 
     - name: Send Slack alert
       if: failure() || steps.regression.outputs.has_regression == 'true'
