@@ -140,14 +140,15 @@ runs:
         cp "$RESULTS_FILE" "$RESULTS_DIR/${TIMESTAMP}.json"
         python3 ${{ github.action_path }}/scripts/calculate_rolling_baseline.py
 
-        # Push benchmark data so the dashboard can collect it via API.
-        git config user.name "github-actions[bot]"
-        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-        git add "$RESULTS_DIR"
-        if [[ -n $(git status --porcelain) ]]; then
-          git commit -m "chore: store benchmark results [skip ci]"
-          git push
-        fi
+    - name: Push results to dashboard
+      if: inputs.store_results == 'true' && inputs.dashboard_token != ''
+      shell: bash
+      env:
+        DASHBOARD_TOKEN: ${{ inputs.dashboard_token }}
+        DASHBOARD_REPO: ${{ inputs.dashboard_repo }}
+        IMPLEMENTATION: ${{ inputs.implementation }}
+        RESULTS_FILE: ${{ inputs.results_file }}
+      run: python3 ${{ github.action_path }}/scripts/push_to_dashboard.py
 
     - name: Send Slack alert
       if: failure() || steps.regression.outputs.has_regression == 'true'
@@ -186,5 +187,5 @@ runs:
           -H "Authorization: token $DASHBOARD_TOKEN" \
           -H "Accept: application/vnd.github.v3+json" \
           "https://api.github.com/repos/$DASHBOARD_REPO/dispatches" \
-          -d "{\"event_type\":\"benchmark-updated\",\"client_payload\":{\"implementation\":\"$IMPLEMENTATION\"}}"
+          -d "{\"event_type\":\"deploy-pages\",\"client_payload\":{\"implementation\":\"$IMPLEMENTATION\"}}"
         echo "Triggered dashboard update for $IMPLEMENTATION"
