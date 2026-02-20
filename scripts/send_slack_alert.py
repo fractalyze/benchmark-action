@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 Fractalyze Authors.
 # SPDX-License-Identifier: Apache-2.0
-"""Send Slack alert for benchmark regression."""
+"""Send Slack alert for benchmark regression or significant improvement."""
 from __future__ import annotations
 
 import json
@@ -9,6 +9,21 @@ import os
 import sys
 import urllib.request
 from pathlib import Path
+
+
+_METRICS_TO_REPORT = [
+    ("Latency", "latency", "{:.2f} ns"),
+    ("Throughput", "throughput", "{:,.2f} ops/s"),
+    ("Memory", "memory", "{:,.0f} bytes"),
+]
+
+_CHANGE_TYPE_HEADERS = {
+    "regression": ("Warning: Benchmark Regression Detected", ":warning:"),
+    "improvement": ("Benchmark Improvement Detected", ":chart_with_upwards_trend:"),
+    "mixed": ("Benchmark: Mixed Performance Changes", ":bar_chart:"),
+}
+
+_DEFAULT_HEADER = ("Benchmark Run Failed", ":x:")
 
 
 def main() -> int:
@@ -29,10 +44,13 @@ def main() -> int:
     run_id = os.environ.get("GITHUB_RUN_ID", "")
     run_url = f"{server_url}/{repository}/actions/runs/{run_id}"
 
+    change_type = os.environ.get("CHANGE_TYPE", "")
+    header_text, header_emoji = _CHANGE_TYPE_HEADERS.get(change_type, _DEFAULT_HEADER)
+
     blocks = [
         {
             "type": "header",
-            "text": {"type": "plain_text", "text": "Warning: Benchmark Regression Detected"},
+            "text": {"type": "plain_text", "text": header_text, "emoji": True},
         },
         {
             "type": "section",
@@ -44,10 +62,16 @@ def main() -> int:
     ]
 
     for name, bench in data.get("benchmarks", {}).items():
-        lat = bench.get("latency", {}).get("value", "N/A")
-        lat_str = f"{lat:.2f} ns" if isinstance(lat, (int, float)) else str(lat)
+        fields = []
+        for label, key, fmt in _METRICS_TO_REPORT:
+            val = bench.get(key, {}).get("value")
+            if val is not None:
+                val_str = fmt.format(val) if isinstance(val, (int, float)) else str(val)
+                fields.append(f"{label}: {val_str}")
+
+        summary = " | ".join(fields) if fields else "N/A"
         blocks.append(
-            {"type": "section", "text": {"type": "mrkdwn", "text": f"*{name}*: {lat_str}"}}
+            {"type": "section", "text": {"type": "mrkdwn", "text": f"*{name}*: {summary}"}}
         )
 
     # Include AI analysis if available
@@ -98,7 +122,7 @@ def main() -> int:
 
     try:
         urllib.request.urlopen(req)
-        print("Slack alert sent")
+        print(f"Slack alert sent ({header_emoji} {change_type or 'failure'})")
     except urllib.error.URLError as e:
         print(f"Failed to send Slack alert: {e}")
         return 1

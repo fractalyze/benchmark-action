@@ -31,6 +31,24 @@ IMPLEMENTATION = os.environ["IMPLEMENTATION"]
 RESULTS_FILE = os.environ.get("RESULTS_FILE", "benchmark_results.json")
 GITHUB_SHA = os.environ.get("GITHUB_SHA", "")
 
+# Source repo name for commit links (e.g., "zkx" instead of "zkx-poseidon2-gpu")
+_source_repo = os.environ.get("SOURCE_REPO", "")
+if not _source_repo:
+    # Fallback: derive from GITHUB_REPOSITORY (owner/repo → repo)
+    gh_repo = os.environ.get("GITHUB_REPOSITORY", "")
+    _source_repo = gh_repo.split("/")[-1] if gh_repo else IMPLEMENTATION
+SOURCE_REPO = _source_repo
+
+# Tags for the implementation (e.g., "gpu,cuda" → ["gpu", "cuda"])
+_raw_tags = os.environ.get("TAGS", "")
+TAGS: list[str] = [t.strip() for t in _raw_tags.split(",") if t.strip()] if _raw_tags else []
+
+# Run URL for linking to the GitHub Actions run
+_server_url = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
+_gh_repository = os.environ.get("GITHUB_REPOSITORY", "")
+_run_id = os.environ.get("GITHUB_RUN_ID", "")
+RUN_URL = f"{_server_url}/{_gh_repository}/actions/runs/{_run_id}" if _gh_repository and _run_id else ""
+
 MAX_RETRIES = 3
 RETRY_DELAY = 2  # seconds
 
@@ -184,6 +202,8 @@ def main() -> int:
         "platform": platform,
         "benchmarks": benchmarks,
     }
+    if RUN_URL:
+        entry["runUrl"] = RUN_URL
 
     # 3. Update history.json
     history_path = f"data/{IMPLEMENTATION}/history.json"
@@ -227,18 +247,25 @@ def main() -> int:
         if impl["name"] == IMPLEMENTATION:
             impl["commitCount"] = len(history["commits"])
             impl["latestCommit"] = short_sha
+            if SOURCE_REPO and SOURCE_REPO != IMPLEMENTATION:
+                impl["repo"] = SOURCE_REPO
+            if TAGS:
+                impl["tags"] = TAGS
             found = True
             break
 
     if not found:
-        manifest["implementations"].append(
-            {
-                "name": IMPLEMENTATION,
-                "type": "tracked",
-                "commitCount": len(history["commits"]),
-                "latestCommit": short_sha,
-            }
-        )
+        new_entry: dict[str, object] = {
+            "name": IMPLEMENTATION,
+            "type": "tracked",
+            "commitCount": len(history["commits"]),
+            "latestCommit": short_sha,
+        }
+        if SOURCE_REPO and SOURCE_REPO != IMPLEMENTATION:
+            new_entry["repo"] = SOURCE_REPO
+        if TAGS:
+            new_entry["tags"] = TAGS
+        manifest["implementations"].append(new_entry)
 
     manifest["lastUpdated"] = timestamp
 

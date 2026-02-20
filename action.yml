@@ -68,11 +68,22 @@ inputs:
     description: "Dashboard repository (owner/repo)"
     required: false
     default: "fractalyze/benchmark-dashboard"
+  repo:
+    description: "Source repository name for commit links (e.g., zkx). Defaults to GITHUB_REPOSITORY tail."
+    required: false
+    default: ""
+  tags:
+    description: "Comma-separated tags for the implementation (e.g., gpu,cuda)"
+    required: false
+    default: ""
 
 outputs:
-  has_regression:
-    description: "Whether a regression was detected"
-    value: ${{ steps.regression.outputs.has_regression }}
+  has_significant_change:
+    description: "Whether a significant change (regression or improvement) was detected"
+    value: ${{ steps.regression.outputs.has_significant_change }}
+  change_type:
+    description: "Type of change detected (regression, improvement, mixed, or empty)"
+    value: ${{ steps.regression.outputs.change_type }}
   results_file:
     description: "Path to benchmark results JSON"
     value: ${{ inputs.results_file }}
@@ -148,10 +159,15 @@ runs:
         DASHBOARD_REPO: ${{ inputs.dashboard_repo }}
         IMPLEMENTATION: ${{ inputs.implementation }}
         RESULTS_FILE: ${{ inputs.results_file }}
+        SOURCE_REPO: ${{ inputs.repo }}
+        TAGS: ${{ inputs.tags }}
+        GITHUB_SERVER_URL: ${{ github.server_url }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_RUN_ID: ${{ github.run_id }}
       run: python3 ${{ github.action_path }}/scripts/push_to_dashboard.py
 
     - name: Send Slack alert
-      if: failure() || steps.regression.outputs.has_regression == 'true'
+      if: failure() || steps.regression.outputs.has_significant_change == 'true'
       shell: bash
       env:
         SLACK_WEBHOOK_URL: ${{ inputs.slack_webhook }}
@@ -160,6 +176,7 @@ runs:
         GITHUB_REPOSITORY: ${{ github.repository }}
         GITHUB_RUN_ID: ${{ github.run_id }}
         AI_ANALYSIS_OUTPUT: ai_analysis.md
+        CHANGE_TYPE: ${{ steps.regression.outputs.change_type }}
       run: |
         if [ -n "$SLACK_WEBHOOK_URL" ]; then
           python3 ${{ github.action_path }}/scripts/send_slack_alert.py
