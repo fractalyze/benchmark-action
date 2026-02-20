@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 Fractalyze Authors.
 # SPDX-License-Identifier: Apache-2.0
-"""Send Slack alert for benchmark regression."""
+"""Send Slack alert for benchmark regression or significant improvement."""
 from __future__ import annotations
 
 import json
@@ -29,10 +29,19 @@ def main() -> int:
     run_id = os.environ.get("GITHUB_RUN_ID", "")
     run_url = f"{server_url}/{repository}/actions/runs/{run_id}"
 
+    has_regression = os.environ.get("HAS_REGRESSION", "") == "true"
+
+    if has_regression:
+        header_text = "Warning: Benchmark Regression Detected"
+        header_emoji = ":warning:"
+    else:
+        header_text = "Benchmark: Significant Performance Change"
+        header_emoji = ":chart_with_upwards_trend:"
+
     blocks = [
         {
             "type": "header",
-            "text": {"type": "plain_text", "text": "Warning: Benchmark Regression Detected"},
+            "text": {"type": "plain_text", "text": header_text, "emoji": True},
         },
         {
             "type": "section",
@@ -44,10 +53,25 @@ def main() -> int:
     ]
 
     for name, bench in data.get("benchmarks", {}).items():
-        lat = bench.get("latency", {}).get("value", "N/A")
-        lat_str = f"{lat:.2f} ns" if isinstance(lat, (int, float)) else str(lat)
+        fields = []
+        lat = bench.get("latency", {}).get("value")
+        if lat is not None:
+            lat_str = f"{lat:.2f} ns" if isinstance(lat, (int, float)) else str(lat)
+            fields.append(f"Latency: {lat_str}")
+
+        tp = bench.get("throughput", {}).get("value")
+        if tp is not None:
+            tp_str = f"{tp:,.2f} ops/s" if isinstance(tp, (int, float)) else str(tp)
+            fields.append(f"Throughput: {tp_str}")
+
+        mem = bench.get("memory", {}).get("value")
+        if mem is not None:
+            mem_str = f"{mem:,.0f} bytes" if isinstance(mem, (int, float)) else str(mem)
+            fields.append(f"Memory: {mem_str}")
+
+        summary = " | ".join(fields) if fields else "N/A"
         blocks.append(
-            {"type": "section", "text": {"type": "mrkdwn", "text": f"*{name}*: {lat_str}"}}
+            {"type": "section", "text": {"type": "mrkdwn", "text": f"*{name}*: {summary}"}}
         )
 
     # Include AI analysis if available
@@ -98,7 +122,7 @@ def main() -> int:
 
     try:
         urllib.request.urlopen(req)
-        print("Slack alert sent")
+        print(f"Slack alert sent ({header_emoji} {'regression' if has_regression else 'significant change'})")
     except urllib.error.URLError as e:
         print(f"Failed to send Slack alert: {e}")
         return 1
