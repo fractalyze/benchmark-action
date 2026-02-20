@@ -11,6 +11,21 @@ import urllib.request
 from pathlib import Path
 
 
+_METRICS_TO_REPORT = [
+    ("Latency", "latency", "{:.2f} ns"),
+    ("Throughput", "throughput", "{:,.2f} ops/s"),
+    ("Memory", "memory", "{:,.0f} bytes"),
+]
+
+_CHANGE_TYPE_HEADERS = {
+    "regression": ("Warning: Benchmark Regression Detected", ":warning:"),
+    "improvement": ("Benchmark Improvement Detected", ":chart_with_upwards_trend:"),
+    "mixed": ("Benchmark: Mixed Performance Changes", ":bar_chart:"),
+}
+
+_DEFAULT_HEADER = ("Benchmark Run Failed", ":x:")
+
+
 def main() -> int:
     webhook_url = os.environ.get("SLACK_WEBHOOK_URL")
     if not webhook_url:
@@ -29,14 +44,8 @@ def main() -> int:
     run_id = os.environ.get("GITHUB_RUN_ID", "")
     run_url = f"{server_url}/{repository}/actions/runs/{run_id}"
 
-    has_regression = os.environ.get("HAS_REGRESSION", "") == "true"
-
-    if has_regression:
-        header_text = "Warning: Benchmark Regression Detected"
-        header_emoji = ":warning:"
-    else:
-        header_text = "Benchmark: Significant Performance Change"
-        header_emoji = ":chart_with_upwards_trend:"
+    change_type = os.environ.get("CHANGE_TYPE", "")
+    header_text, header_emoji = _CHANGE_TYPE_HEADERS.get(change_type, _DEFAULT_HEADER)
 
     blocks = [
         {
@@ -54,20 +63,11 @@ def main() -> int:
 
     for name, bench in data.get("benchmarks", {}).items():
         fields = []
-        lat = bench.get("latency", {}).get("value")
-        if lat is not None:
-            lat_str = f"{lat:.2f} ns" if isinstance(lat, (int, float)) else str(lat)
-            fields.append(f"Latency: {lat_str}")
-
-        tp = bench.get("throughput", {}).get("value")
-        if tp is not None:
-            tp_str = f"{tp:,.2f} ops/s" if isinstance(tp, (int, float)) else str(tp)
-            fields.append(f"Throughput: {tp_str}")
-
-        mem = bench.get("memory", {}).get("value")
-        if mem is not None:
-            mem_str = f"{mem:,.0f} bytes" if isinstance(mem, (int, float)) else str(mem)
-            fields.append(f"Memory: {mem_str}")
+        for label, key, fmt in _METRICS_TO_REPORT:
+            val = bench.get(key, {}).get("value")
+            if val is not None:
+                val_str = fmt.format(val) if isinstance(val, (int, float)) else str(val)
+                fields.append(f"{label}: {val_str}")
 
         summary = " | ".join(fields) if fields else "N/A"
         blocks.append(
@@ -122,7 +122,7 @@ def main() -> int:
 
     try:
         urllib.request.urlopen(req)
-        print(f"Slack alert sent ({header_emoji} {'regression' if has_regression else 'significant change'})")
+        print(f"Slack alert sent ({header_emoji} {change_type or 'failure'})")
     except urllib.error.URLError as e:
         print(f"Failed to send Slack alert: {e}")
         return 1

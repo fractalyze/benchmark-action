@@ -48,12 +48,13 @@ Reusable GitHub Action for running ZK benchmarks with regression detection.
 
 ## Outputs
 
-| Output           | Description                    |
-| ---------------- | ------------------------------ |
-| `has_regression` | `true` if regression detected  |
-| `results_file`   | Path to benchmark results JSON |
-| `cpu_load`       | Normalized CPU load (0-1)      |
-| `memory_usage`   | Memory usage ratio (0-1)       |
+| Output                 | Description                                            |
+| ---------------------- | ------------------------------------------------------ |
+| `has_significant_change` | `true` if regression or improvement detected           |
+| `change_type`          | `regression`, `improvement`, `mixed`, or empty         |
+| `results_file`         | Path to benchmark results JSON                         |
+| `cpu_load`             | Normalized CPU load (0-1)                              |
+| `memory_usage`         | Memory usage ratio (0-1)                               |
 
 ## JSON Schema
 

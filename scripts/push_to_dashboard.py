@@ -247,16 +247,11 @@ def main() -> int:
         if impl["name"] == IMPLEMENTATION:
             impl["commitCount"] = len(history["commits"])
             impl["latestCommit"] = short_sha
-            found = True
-            break
-
-    # Ensure repo and tags are set on the matching entry
-    for impl in manifest.get("implementations", []):
-        if impl["name"] == IMPLEMENTATION:
             if SOURCE_REPO and SOURCE_REPO != IMPLEMENTATION:
                 impl["repo"] = SOURCE_REPO
             if TAGS:
                 impl["tags"] = TAGS
+            found = True
             break
 
     if not found:

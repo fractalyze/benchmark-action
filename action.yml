@@ -78,12 +78,12 @@ inputs:
     default: ""
 
 outputs:
-  has_regression:
-    description: "Whether a regression was detected"
-    value: ${{ steps.regression.outputs.has_regression }}
   has_significant_change:
     description: "Whether a significant change (regression or improvement) was detected"
     value: ${{ steps.regression.outputs.has_significant_change }}
+  change_type:
+    description: "Type of change detected (regression, improvement, mixed, or empty)"
+    value: ${{ steps.regression.outputs.change_type }}
   results_file:
     description: "Path to benchmark results JSON"
     value: ${{ inputs.results_file }}
@@ -167,7 +167,7 @@ runs:
       run: python3 ${{ github.action_path }}/scripts/push_to_dashboard.py
 
     - name: Send Slack alert
-      if: failure() || steps.regression.outputs.has_regression == 'true' || steps.regression.outputs.has_significant_change == 'true'
+      if: failure() || steps.regression.outputs.has_significant_change == 'true'
       shell: bash
       env:
         SLACK_WEBHOOK_URL: ${{ inputs.slack_webhook }}
@@ -176,7 +176,7 @@ runs:
         GITHUB_REPOSITORY: ${{ github.repository }}
         GITHUB_RUN_ID: ${{ github.run_id }}
         AI_ANALYSIS_OUTPUT: ai_analysis.md
-        HAS_REGRESSION: ${{ steps.regression.outputs.has_regression }}
+        CHANGE_TYPE: ${{ steps.regression.outputs.change_type }}
       run: |
         if [ -n "$SLACK_WEBHOOK_URL" ]; then
           python3 ${{ github.action_path }}/scripts/send_slack_alert.py
