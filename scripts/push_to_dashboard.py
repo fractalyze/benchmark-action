@@ -134,15 +134,21 @@ def put_file(
 # ---------------------------------------------------------------------------
 
 
-def normalize_platform(platform: dict) -> dict:
-    """Rename cpu_vendor → cpu, gpu_vendor → gpu; drop arch/cpu_count."""
+def normalize_platform(platform: dict, tags: list[str] | None = None) -> dict:
+    """Rename cpu_vendor → cpu, gpu_vendor → gpu; drop arch/cpu_count.
+
+    Only includes GPU info when *tags* contain ``"gpu"``, preventing CPU
+    benchmarks that happen to run on GPU-equipped machines from being
+    misclassified as GPU results.
+    """
     normalized: dict[str, str] = {}
     if "os" in platform:
         normalized["os"] = platform["os"]
     if cpu := platform.get("cpu") or platform.get("cpu_vendor"):
         normalized["cpu"] = cpu
-    if gpu := platform.get("gpu") or platform.get("gpu_vendor"):
-        normalized["gpu"] = gpu
+    if tags and "gpu" in tags:
+        if gpu := platform.get("gpu") or platform.get("gpu_vendor"):
+            normalized["gpu"] = gpu
     return normalized
 
 
@@ -178,7 +184,7 @@ def main() -> int:
         or results.get("platform")
         or {}
     )
-    platform = normalize_platform(raw_platform)
+    platform = normalize_platform(raw_platform, TAGS)
 
     # 2. Commit metadata
     commit_sha = GITHUB_SHA
