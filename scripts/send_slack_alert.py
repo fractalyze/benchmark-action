@@ -33,11 +33,15 @@ def main() -> int:
         return 0
 
     results_file = os.environ.get("RESULTS_FILE", "benchmark_results.json")
-    with open(results_file) as f:
-        data = json.load(f)
-
-    commit = data["metadata"]["commit_sha"]
-    impl = data["metadata"]["implementation"]
+    try:
+        with open(results_file) as f:
+            data = json.load(f)
+        commit = data["metadata"]["commit_sha"]
+        impl = data["metadata"]["implementation"]
+    except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError):
+        data = None
+        commit = os.environ.get("GITHUB_SHA", "unknown")[:7]
+        impl = os.environ.get("IMPLEMENTATION", "unknown")
 
     server_url = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
     repository = os.environ.get("GITHUB_REPOSITORY", "")
@@ -61,44 +65,48 @@ def main() -> int:
         },
     ]
 
-    for name, bench in data.get("benchmarks", {}).items():
-        fields = []
-        for label, key, fmt in _METRICS_TO_REPORT:
-            val = bench.get(key, {}).get("value")
-            if val is not None:
-                val_str = fmt.format(val) if isinstance(val, (int, float)) else str(val)
-                fields.append(f"{label}: {val_str}")
+    if data:
+        for name, bench in data.get("benchmarks", {}).items():
+            fields = []
+            for label, key, fmt in _METRICS_TO_REPORT:
+                val = bench.get(key, {}).get("value")
+                if val is not None:
+                    val_str = fmt.format(val) if isinstance(val, (int, float)) else str(val)
+                    fields.append(f"{label}: {val_str}")
 
-        summary = " | ".join(fields) if fields else "N/A"
-        blocks.append(
-            {"type": "section", "text": {"type": "mrkdwn", "text": f"*{name}*: {summary}"}}
-        )
-
-    # Include AI analysis if available
-    ai_analysis_file = Path(os.environ.get("AI_ANALYSIS_OUTPUT", "ai_analysis.md"))
-    if ai_analysis_file.exists():
-        analysis_text = ai_analysis_file.read_text().strip()
-        # Extract just the analysis section (skip markdown headers for Slack)
-        lines = analysis_text.split("\n")
-        analysis_lines = []
-        in_analysis = False
-        for line in lines:
-            if line.startswith("### Analysis"):
-                in_analysis = True
-                continue
-            if in_analysis and line.startswith("##"):
-                break
-            if in_analysis and line.strip():
-                analysis_lines.append(line)
-
-        if analysis_lines:
-            analysis_summary = "\n".join(analysis_lines[:5])  # Limit to 5 lines
+            summary = " | ".join(fields) if fields else "N/A"
             blocks.append(
-                {
-                    "type": "section",
-                    "text": {"type": "mrkdwn", "text": f"*AI Analysis:*\n{analysis_summary}"},
-                }
+                {"type": "section", "text": {"type": "mrkdwn", "text": f"*{name}*: {summary}"}}
             )
+
+        # Include AI analysis if available
+        ai_analysis_file = Path(os.environ.get("AI_ANALYSIS_OUTPUT", "ai_analysis.md"))
+        if ai_analysis_file.exists():
+            analysis_text = ai_analysis_file.read_text().strip()
+            # Extract just the analysis section (skip markdown headers for Slack)
+            lines = analysis_text.split("\n")
+            analysis_lines = []
+            in_analysis = False
+            for line in lines:
+                if line.startswith("### Analysis"):
+                    in_analysis = True
+                    continue
+                if in_analysis and line.startswith("##"):
+                    break
+                if in_analysis and line.strip():
+                    analysis_lines.append(line)
+
+            if analysis_lines:
+                analysis_summary = "\n".join(analysis_lines[:5])  # Limit to 5 lines
+                blocks.append(
+                    {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": f"*AI Analysis:*\n{analysis_summary}",
+                        },
+                    }
+                )
 
     blocks.append(
         {
