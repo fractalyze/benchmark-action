@@ -32,6 +32,12 @@ def main() -> int:
         print("SLACK_WEBHOOK_URL not set, skipping")
         return 0
 
+    if not webhook_url.startswith("https://hooks.slack.com/services/"):
+        print(
+            "Invalid Slack webhook URL (expected https://hooks.slack.com/services/...)"
+        )
+        return 1
+
     results_file = os.environ.get("RESULTS_FILE", "benchmark_results.json")
     try:
         with open(results_file) as f:
@@ -71,12 +77,17 @@ def main() -> int:
             for label, key, fmt in _METRICS_TO_REPORT:
                 val = bench.get(key, {}).get("value")
                 if val is not None:
-                    val_str = fmt.format(val) if isinstance(val, (int, float)) else str(val)
+                    val_str = (
+                        fmt.format(val) if isinstance(val, (int, float)) else str(val)
+                    )
                     fields.append(f"{label}: {val_str}")
 
             summary = " | ".join(fields) if fields else "N/A"
             blocks.append(
-                {"type": "section", "text": {"type": "mrkdwn", "text": f"*{name}*: {summary}"}}
+                {
+                    "type": "section",
+                    "text": {"type": "mrkdwn", "text": f"*{name}*: {summary}"},
+                }
             )
 
         # Include AI analysis if available
