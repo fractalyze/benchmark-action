@@ -38,7 +38,7 @@ def main() -> int:
             data = json.load(f)
         commit = data["metadata"]["commit_sha"]
         impl = data["metadata"]["implementation"]
-    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+    except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError):
         data = None
         commit = os.environ.get("GITHUB_SHA", "unknown")[:7]
         impl = os.environ.get("IMPLEMENTATION", "unknown")
