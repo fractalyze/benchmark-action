@@ -13,8 +13,8 @@ inputs:
   benchmark_cmd:
     description: "Command to run the benchmark (must output JSON to benchmark_results.json)"
     required: true
-  implementation:
-    description: "Implementation name (e.g., whir-zorch, plonky3)"
+  device:
+    description: "Device type (cpu or gpu)"
     required: true
   regression_threshold:
     description: "Regression threshold as decimal (e.g., 0.10 for 10%)"
@@ -70,10 +70,6 @@ inputs:
     default: "fractalyze/benchmark-dashboard"
   repo:
     description: "Source repository name for commit links (e.g., zkx). Defaults to GITHUB_REPOSITORY tail."
-    required: false
-    default: ""
-  tags:
-    description: "Comma-separated tags for the implementation (e.g., gpu,cuda)"
     required: false
     default: ""
 
@@ -157,13 +153,9 @@ runs:
       env:
         DASHBOARD_TOKEN: ${{ inputs.dashboard_token }}
         DASHBOARD_REPO: ${{ inputs.dashboard_repo }}
-        IMPLEMENTATION: ${{ inputs.implementation }}
+        DEVICE: ${{ inputs.device }}
         RESULTS_FILE: ${{ inputs.results_file }}
         SOURCE_REPO: ${{ inputs.repo }}
-        TAGS: ${{ inputs.tags }}
-        GITHUB_SERVER_URL: ${{ github.server_url }}
-        GITHUB_REPOSITORY: ${{ github.repository }}
-        GITHUB_RUN_ID: ${{ github.run_id }}
       run: python3 ${{ github.action_path }}/scripts/push_to_dashboard.py
 
     - name: Send Slack alert
@@ -172,7 +164,8 @@ runs:
       env:
         SLACK_WEBHOOK_URL: ${{ inputs.slack_webhook }}
         RESULTS_FILE: ${{ inputs.results_file }}
-        IMPLEMENTATION: ${{ inputs.implementation }}
+        SOURCE_REPO: ${{ inputs.repo }}
+        DEVICE: ${{ inputs.device }}
         GITHUB_SERVER_URL: ${{ github.server_url }}
         GITHUB_REPOSITORY: ${{ github.repository }}
         GITHUB_RUN_ID: ${{ github.run_id }}
@@ -199,11 +192,12 @@ runs:
       env:
         DASHBOARD_TOKEN: ${{ inputs.dashboard_token }}
         DASHBOARD_REPO: ${{ inputs.dashboard_repo }}
-        IMPLEMENTATION: ${{ inputs.implementation }}
+        SOURCE_REPO: ${{ inputs.repo }}
+        DEVICE: ${{ inputs.device }}
       run: |
         curl -s -X POST \
           -H "Authorization: token $DASHBOARD_TOKEN" \
           -H "Accept: application/vnd.github.v3+json" \
           "https://api.github.com/repos/$DASHBOARD_REPO/dispatches" \
-          -d "{\"event_type\":\"deploy-pages\",\"client_payload\":{\"implementation\":\"$IMPLEMENTATION\"}}"
-        echo "Triggered dashboard update for $IMPLEMENTATION"
+          -d "{\"event_type\":\"deploy-pages\",\"client_payload\":{\"repo\":\"$SOURCE_REPO\",\"device\":\"$DEVICE\"}}"
+        echo "Triggered dashboard update for $SOURCE_REPO ($DEVICE)"

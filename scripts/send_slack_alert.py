@@ -43,11 +43,13 @@ def main() -> int:
         with open(results_file) as f:
             data = json.load(f)
         commit = data["metadata"]["commit_sha"]
-        impl = data["metadata"]["implementation"]
+        repo = data["metadata"].get("repo", os.environ.get("SOURCE_REPO", "unknown"))
+        device = data["metadata"].get("device", os.environ.get("DEVICE", "unknown"))
     except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError):
         data = None
         commit = os.environ.get("GITHUB_SHA", "unknown")[:7]
-        impl = os.environ.get("IMPLEMENTATION", "unknown")
+        repo = os.environ.get("SOURCE_REPO", "unknown")
+        device = os.environ.get("DEVICE", "unknown")
 
     server_url = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
     repository = os.environ.get("GITHUB_REPOSITORY", "")
@@ -65,7 +67,8 @@ def main() -> int:
         {
             "type": "section",
             "fields": [
-                {"type": "mrkdwn", "text": f"*Implementation:*\n{impl}"},
+                {"type": "mrkdwn", "text": f"*Repo:*\n{repo}"},
+                {"type": "mrkdwn", "text": f"*Device:*\n{device.upper()}"},
                 {"type": "mrkdwn", "text": f"*Commit:*\n`{commit}`"},
             ],
         },
