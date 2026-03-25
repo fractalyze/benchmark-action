@@ -107,7 +107,7 @@ def main() -> int:
     if not api_key:
         return 0
 
-    model = os.environ.get("AI_MODEL", "claude-sonnet-4-6-20250514")
+    model = os.environ.get("AI_MODEL", "claude-opus-4-5-20251101")
     results_file = os.environ.get("RESULTS_FILE", "benchmark_results.json")
     details_file = os.environ.get("REGRESSION_DETAILS_FILE", "regression_details.json")
     system_load_path = Path(os.environ.get("SYSTEM_LOAD_OUTPUT", "system_load.json"))
