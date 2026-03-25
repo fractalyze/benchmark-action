@@ -88,7 +88,7 @@ def _call_claude_api(api_key: str, model: str, prompt: str) -> str:
     }
     data = {
         "model": model,
-        "max_tokens": 1024,
+        "max_tokens": 2048,
         "messages": [{"role": "user", "content": prompt}],
     }
     req = urllib.request.Request(
@@ -142,16 +142,22 @@ cryptographic kernel.
 {git_diff}
 
 ## Instructions
-Respond in EXACTLY this format (3 lines, no extra text):
+Respond in EXACTLY this format:
+
 **Verdict**: [Likely real regression | Likely noise | Inconclusive]
 **Probable cause**: [1-2 sentences identifying the root cause]
 **Recommendation**: [specific action — e.g. investigate X, re-run to confirm, safe to ignore]
 
+### Detailed Analysis
+[2-4 paragraphs explaining which code changes map to which benchmark \
+changes. Reference specific files/functions from the diff. If system load \
+was high, discuss whether that could explain the variance. Mention any \
+benchmarks that changed unexpectedly (no obvious code change).]
+
 Guidelines:
 - If system load was HIGH, factor that into your verdict (high load → likely noise)
 - If Z-score is extremely high (>10) AND code diff shows relevant changes, it is likely real
-- If no relevant code changes in the diff, mention possible external factors
-- Be concise — each line should be one sentence"""
+- If no relevant code changes in the diff, mention possible external factors"""
 
     analysis = _call_claude_api(api_key, model, prompt)
 

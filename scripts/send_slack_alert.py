@@ -3,11 +3,10 @@
 # SPDX-License-Identifier: Apache-2.0
 """Send visual Slack alert for benchmark regression / improvement.
 
-Renders a Block Kit message with:
-  - Per-metric comparison (current → baseline, %, σ, z-score)
-  - Unicode sparkline showing recent trend
-  - Structured AI analysis verdict
-  - Deep-link buttons to GitHub Actions run and benchmark dashboard
+Supports two modes:
+  - **Bot Token** (preferred): Uses ``chat.postMessage`` so the AI analysis
+    can be posted as a thread reply with full detail.
+  - **Webhook** (fallback): Posts a single message via incoming webhook.
 """
 from __future__ import annotations
 
@@ -41,6 +40,10 @@ _METRIC_LABELS = {
 _MAX_BENCHMARKS = 5  # Block Kit 50-block limit safeguard
 
 
+# ---------------------------------------------------------------------------
+# Block builders
+# ---------------------------------------------------------------------------
+
 def _build_metric_block(
     name: str,
     metrics: dict,
@@ -50,9 +53,6 @@ def _build_metric_block(
     device: str,
 ) -> list[dict]:
     """Build Slack blocks for one benchmark's metric changes."""
-    blocks: list[dict] = []
-
-    # Pick the "worst" metric for the header indicator
     has_regression = any(m["direction"] == "regression" for m in metrics.values())
     indicator = "🔴" if has_regression else "🟢"
     dir_label = "Regression" if has_regression else "Improvement"
@@ -73,7 +73,6 @@ def _build_metric_block(
 
     # Sparkline from dashboard history
     if dashboard_token and dashboard_repo:
-        # Use the first metric key for the sparkline
         first_metric = next(iter(metrics))
         _commits, values = load_history_from_dashboard(
             dashboard_token, dashboard_repo, source_repo, name, device,
@@ -83,23 +82,31 @@ def _build_metric_block(
             spark = render_sparkline(values)
             lines.append(f"`Trend:    {spark}  (last {len(values)} runs)`")
 
-    blocks.append({
+    return [{
         "type": "section",
         "text": {"type": "mrkdwn", "text": "\n".join(lines)},
-    })
-
-    return blocks
+    }]
 
 
-def _build_ai_analysis_block(ai_analysis_file: Path) -> list[dict]:
-    """Build Slack blocks for AI analysis section."""
+def _build_ai_thread_text(ai_analysis_file: Path) -> str:
+    """Build the full AI analysis text for a thread reply."""
+    if not ai_analysis_file.exists():
+        return ""
+
+    text = ai_analysis_file.read_text().strip()
+    # Convert markdown **bold** to Slack mrkdwn *bold*
+    text = text.replace("**", "*")
+    return f"🤖 *AI Performance Analysis*\n\n{text}"
+
+
+def _build_ai_inline_block(ai_analysis_file: Path) -> list[dict]:
+    """Build a compact AI analysis block for webhook mode (no threading)."""
     if not ai_analysis_file.exists():
         return []
 
     text = ai_analysis_file.read_text().strip()
     lines = text.split("\n")
 
-    # Extract the Analysis section
     analysis_lines: list[str] = []
     in_analysis = False
     for line in lines:
@@ -114,28 +121,113 @@ def _build_ai_analysis_block(ai_analysis_file: Path) -> list[dict]:
     if not analysis_lines:
         return []
 
-    # Convert markdown **bold** to Slack mrkdwn *bold*
     analysis_lines = [line.replace("**", "*") for line in analysis_lines]
     analysis_text = "\n".join(analysis_lines[:5])
     return [
         {"type": "divider"},
         {
             "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": f"🤖 *AI Analysis*\n{analysis_text}",
-            },
+            "text": {"type": "mrkdwn", "text": f"🤖 *AI Analysis*\n{analysis_text}"},
         },
     ]
 
 
+# ---------------------------------------------------------------------------
+# Sending
+# ---------------------------------------------------------------------------
+
+def _send_via_bot(token: str, channel: str, blocks: list[dict]) -> str | None:
+    """Post message via chat.postMessage, return ``ts`` for threading."""
+    payload = {"channel": channel, "blocks": blocks}
+    req = urllib.request.Request(
+        "https://slack.com/api/chat.postMessage",
+        data=json.dumps(payload).encode(),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req) as resp:
+            data = json.loads(resp.read().decode())
+        if data.get("ok"):
+            return data.get("ts")
+        print(f"Slack API error: {data.get('error')}")
+        return None
+    except urllib.error.URLError as e:
+        print(f"Failed to send Slack message: {e}")
+        return None
+
+
+def _send_thread_reply(
+    token: str, channel: str, thread_ts: str, text: str,
+) -> None:
+    """Post AI analysis as a thread reply."""
+    # Split into blocks if text is long (Slack 3000 char limit per block)
+    chunks = []
+    while text:
+        chunks.append(text[:3000])
+        text = text[3000:]
+
+    blocks = [
+        {"type": "section", "text": {"type": "mrkdwn", "text": chunk}}
+        for chunk in chunks
+    ]
+
+    payload = {
+        "channel": channel,
+        "thread_ts": thread_ts,
+        "blocks": blocks,
+    }
+    req = urllib.request.Request(
+        "https://slack.com/api/chat.postMessage",
+        data=json.dumps(payload).encode(),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req) as resp:
+            data = json.loads(resp.read().decode())
+        if not data.get("ok"):
+            print(f"Thread reply error: {data.get('error')}")
+    except urllib.error.URLError as e:
+        print(f"Failed to send thread reply: {e}")
+
+
+def _send_via_webhook(webhook_url: str, blocks: list[dict]) -> bool:
+    """Post message via incoming webhook (no threading support)."""
+    payload = {"blocks": blocks}
+    req = urllib.request.Request(
+        webhook_url,
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        urllib.request.urlopen(req)
+        return True
+    except urllib.error.URLError as e:
+        print(f"Failed to send Slack alert: {e}")
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
 def main() -> int:
-    webhook_url = os.environ.get("SLACK_WEBHOOK_URL")
-    if not webhook_url:
-        print("SLACK_WEBHOOK_URL not set, skipping")
+    bot_token = os.environ.get("SLACK_BOT_TOKEN", "")
+    channel_id = os.environ.get("SLACK_CHANNEL_ID", "")
+    webhook_url = os.environ.get("SLACK_WEBHOOK_URL", "")
+
+    use_bot = bool(bot_token and channel_id)
+
+    if not use_bot and not webhook_url:
+        print("No Slack credentials set, skipping")
         return 0
 
-    if not webhook_url.startswith("https://hooks.slack.com/"):
+    if not use_bot and not webhook_url.startswith("https://hooks.slack.com/"):
         print("Invalid Slack webhook URL")
         return 1
 
@@ -153,7 +245,7 @@ def main() -> int:
     run_id = os.environ.get("GITHUB_RUN_ID", "")
     run_url = f"{server_url}/{repository}/actions/runs/{run_id}"
 
-    # Read commit + PR info from results or env
+    # Read commit + PR info
     try:
         with open(results_file) as f:
             data = json.load(f)
@@ -161,7 +253,6 @@ def main() -> int:
     except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError):
         commit = os.environ.get("GITHUB_SHA", "unknown")[:7]
 
-    # PR link (available when triggered by pull_request event)
     pr_number = os.environ.get("PR_NUMBER", "")
     if pr_number:
         pr_url = f"{server_url}/{repository}/pull/{pr_number}"
@@ -189,7 +280,7 @@ def main() -> int:
         {"type": "divider"},
     ]
 
-    # Per-benchmark metric blocks (sorted by max |z-score|, limited)
+    # Per-benchmark metric blocks
     details: dict = {}
     details_path = Path(details_file)
     if details_path.exists():
@@ -197,7 +288,6 @@ def main() -> int:
             details = json.load(f)
 
     benchmarks = details.get("benchmarks", {})
-    # Sort by maximum absolute z-score (most significant first)
     sorted_benchmarks = sorted(
         benchmarks.items(),
         key=lambda item: max(abs(m.get("zscore", 0)) for m in item[1].values()),
@@ -218,8 +308,9 @@ def main() -> int:
             ],
         })
 
-    # AI analysis
-    blocks.extend(_build_ai_analysis_block(ai_analysis_file))
+    # AI analysis: inline for webhook, thread reply for bot
+    if not use_bot:
+        blocks.extend(_build_ai_inline_block(ai_analysis_file))
 
     # Action buttons
     action_elements: list[dict] = [
@@ -229,8 +320,6 @@ def main() -> int:
             "url": run_url,
         },
     ]
-
-    # Dashboard deep link (to first benchmark with changes)
     if sorted_benchmarks:
         first_name = sorted_benchmarks[0][0]
         dash_url = build_dashboard_url(source_repo, device, first_name)
@@ -243,19 +332,30 @@ def main() -> int:
     blocks.append({"type": "actions", "elements": action_elements})
 
     # --- Send ---
-    payload = {"blocks": blocks}
-    req = urllib.request.Request(
-        webhook_url,
-        data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json"},
-    )
-
-    try:
-        urllib.request.urlopen(req)
-        print(f"Slack alert sent ({change_type or 'failure'})")
-    except urllib.error.URLError as e:
-        print(f"Failed to send Slack alert: {e}")
-        return 1
+    if use_bot:
+        ts = _send_via_bot(bot_token, channel_id, blocks)
+        if ts:
+            print(f"Slack message sent ({change_type or 'failure'})")
+            # Post AI analysis as thread reply
+            thread_text = _build_ai_thread_text(ai_analysis_file)
+            if thread_text:
+                _send_thread_reply(bot_token, channel_id, ts, thread_text)
+                print("AI analysis posted as thread reply")
+        else:
+            print("Failed to send Slack message via bot, trying webhook fallback")
+            if webhook_url:
+                blocks.extend(_build_ai_inline_block(ai_analysis_file))
+                if _send_via_webhook(webhook_url, blocks):
+                    print(f"Slack alert sent via webhook fallback ({change_type or 'failure'})")
+                else:
+                    return 1
+            else:
+                return 1
+    else:
+        if _send_via_webhook(webhook_url, blocks):
+            print(f"Slack alert sent ({change_type or 'failure'})")
+        else:
+            return 1
 
     return 0
 
