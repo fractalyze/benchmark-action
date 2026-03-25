@@ -17,9 +17,13 @@ inputs:
     description: "Device type (cpu or gpu)"
     required: true
   regression_threshold:
-    description: "Regression threshold as decimal (e.g., 0.10 for 10%)"
+    description: "Percentage threshold fallback when stdev is unavailable (e.g., 0.10 for 10%)"
     required: false
     default: "0.10"
+  zscore_threshold:
+    description: "Z-score threshold for regression detection (e.g., 3.0)"
+    required: false
+    default: "3.0"
   baseline_path:
     description: "Path to baseline JSON file for regression detection"
     required: false
@@ -51,7 +55,7 @@ inputs:
   rolling_window:
     description: "Number of historical results to average for baseline"
     required: false
-    default: "5"
+    default: "10"
   anthropic_api_key:
     description: "Anthropic API key for Claude AI analysis"
     required: false
@@ -59,7 +63,7 @@ inputs:
   ai_model:
     description: "Claude model to use for analysis"
     required: false
-    default: "claude-opus-4-5-20251101"
+    default: "claude-sonnet-4-6-20250514"
   dashboard_token:
     description: "GitHub token for triggering dashboard updates"
     required: false
@@ -117,8 +121,10 @@ runs:
       shell: bash
       env:
         REGRESSION_THRESHOLD: ${{ inputs.regression_threshold }}
+        ZSCORE_THRESHOLD: ${{ inputs.zscore_threshold }}
         BASELINE_PATH: ${{ inputs.baseline_path }}
         RESULTS_FILE: ${{ inputs.results_file }}
+        REGRESSION_DETAILS_FILE: regression_details.json
       run: |
         python3 ${{ github.action_path }}/scripts/detect_regression.py
 
@@ -128,9 +134,9 @@ runs:
       env:
         ANTHROPIC_API_KEY: ${{ inputs.anthropic_api_key }}
         AI_MODEL: ${{ inputs.ai_model }}
-        REGRESSION_THRESHOLD: ${{ inputs.regression_threshold }}
-        BASELINE_PATH: ${{ inputs.baseline_path }}
         RESULTS_FILE: ${{ inputs.results_file }}
+        REGRESSION_DETAILS_FILE: regression_details.json
+        SYSTEM_LOAD_OUTPUT: system_load.json
         AI_ANALYSIS_OUTPUT: ai_analysis.md
       run: python3 ${{ github.action_path }}/scripts/ai_analysis.py >> $GITHUB_STEP_SUMMARY
 
@@ -171,6 +177,10 @@ runs:
         GITHUB_RUN_ID: ${{ github.run_id }}
         AI_ANALYSIS_OUTPUT: ai_analysis.md
         CHANGE_TYPE: ${{ steps.regression.outputs.change_type }}
+        REGRESSION_DETAILS_FILE: regression_details.json
+        DASHBOARD_TOKEN: ${{ inputs.dashboard_token }}
+        DASHBOARD_REPO: ${{ inputs.dashboard_repo }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
       run: |
         if [ -n "$SLACK_WEBHOOK_URL" ]; then
           python3 ${{ github.action_path }}/scripts/send_slack_alert.py
