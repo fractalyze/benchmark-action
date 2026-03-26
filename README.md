@@ -78,21 +78,25 @@ The benchmark command must output JSON matching this schema:
   "benchmarks": {
     "poseidon2": {
       "latency": { "value": 86880, "unit": "ns" },
-      "throughput": { "value": 11510, "unit": "ops/s" }
+      "throughput": { "value": 11510, "unit": "ops/s" },
+      "metadata": { "field": "koalabear", "degree": "20" }
     },
-    "nttforward": {
-      "latency": { "value": 143200, "unit": "ns" }
+    "fft": {
+      "latency": { "value": 143200, "unit": "ns" },
+      "metadata": { "field": "koalabear", "degree": "16" }
     }
   }
 }
 ```
 
 Each benchmark in the `benchmarks` dict is split into a separate file
-`data-v2/{repo}-{name}-{device}.json` in the dashboard repo:
+`data-v2/{repo}-{field}-{degree}-{name}-{device}.json` in the dashboard repo:
 
 ```json
 {
-  "repo": "zkx",
+  "repo": "whir-zorch",
+  "field": "koalabear",
+  "degree": "20",
   "name": "poseidon2",
   "device": "gpu",
   "results": [

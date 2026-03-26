@@ -219,16 +219,20 @@ def main() -> int:
     benchmark_keys: list[str] = []
 
     for bench_name, bench_data in raw_benchmarks.items():
-        file_key = f"{SOURCE_REPO}-{bench_name}-{DEVICE}"
+        bench_meta = bench_data.get("metadata", {})
+        field = bench_meta.get("field", "unknown")
+        degree = bench_meta.get("degree", "0")
+        file_key = f"{SOURCE_REPO}-{field}-{degree}-{bench_name}-{DEVICE}"
         file_path = f"data-v2/{file_key}.json"
         benchmark_keys.append(file_key)
 
-        # Load existing file or create new
         existing, _ = get_file_content(file_path)
 
         if existing is None:
             existing = {
                 "repo": SOURCE_REPO,
+                "field": field,
+                "degree": degree,
                 "name": bench_name,
                 "device": DEVICE,
                 "results": [],
