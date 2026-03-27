@@ -18,7 +18,6 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
-
 # ---------------------------------------------------------------------------
 # Config from environment
 # ---------------------------------------------------------------------------
@@ -218,7 +217,10 @@ def main() -> int:
     files_to_push: dict[str, dict] = {}
     benchmark_keys: list[str] = []
 
-    for bench_name, bench_data in raw_benchmarks.items():
+    for bench_key, bench_data in raw_benchmarks.items():
+        # bench_key may be "name/degree" (zkbench compound key) or plain "name".
+        # Extract the operation name by taking the first segment.
+        bench_name = bench_key.split("/")[0]
         bench_meta = bench_data.get("metadata", {})
         field = bench_meta.get("field", "unknown")
         degree = bench_meta.get("degree", "0")
