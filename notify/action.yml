@@ -1,0 +1,107 @@
+# Copyright 2026 Fractalyze Authors.
+# SPDX-License-Identifier: Apache-2.0
+
+name: "Benchmark Notify"
+description: "Post and update PR comments for benchmark progress, send Slack DM on completion"
+author: "Fractalyze"
+
+inputs:
+  mode:
+    description: "'start' to post initial comment, 'end' to update comment and send Slack DM"
+    required: true
+  pr_number:
+    description: "Pull request number"
+    required: true
+  triggered_by:
+    description: "GitHub username who triggered the benchmark"
+    required: true
+  github_pat:
+    description: "GitHub PAT with issues write permission"
+    required: true
+  comment_id:
+    description: "Comment ID to edit (end mode only)"
+    required: false
+    default: ""
+  status:
+    description: "Status label, e.g., 'completed successfully', 'failed', 'cancelled' (end mode only)"
+    required: false
+    default: ""
+  status_emoji:
+    description: "Slack emoji for status, e.g., ':white_check_mark:' (end mode only)"
+    required: false
+    default: ""
+  slack_bot_token:
+    description: "Slack Bot Token for DM notifications (end mode only)"
+    required: false
+    default: ""
+  github_slack_user_map:
+    description: "JSON mapping of GitHub username to Slack user ID (end mode only)"
+    required: false
+    default: ""
+
+outputs:
+  comment_id:
+    description: "ID of the created PR comment (start mode only)"
+    value: ${{ steps.start.outputs.comment_id }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Post PR comment with run link
+      if: inputs.mode == 'start'
+      id: start
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github_pat }}
+        script: |
+          const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+          const body = [
+            `**Benchmark started** :rocket:`,
+            ``,
+            `Follow progress: [Actions run #${context.runId}](${runUrl})`,
+            ``,
+            `_Triggered by @${{ inputs.triggered_by }}_`,
+          ].join('\n');
+          const { data } = await github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: ${{ inputs.pr_number }},
+            body,
+          });
+          core.setOutput('comment_id', data.id);
+
+    - name: Edit PR comment with final status
+      if: inputs.mode == 'end' && inputs.comment_id != ''
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github_pat }}
+        script: |
+          const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+          const body = [
+            `**Benchmark ${{ inputs.status }}** ${{ inputs.status_emoji }}`,
+            ``,
+            `Results: [Actions run #${context.runId}](${runUrl})`,
+            ``,
+            `_Triggered by @${{ inputs.triggered_by }}_`,
+          ].join('\n');
+          await github.rest.issues.updateComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            comment_id: ${{ inputs.comment_id }},
+            body,
+          });
+
+    - name: Send Slack DM
+      if: inputs.mode == 'end' && inputs.slack_bot_token != '' && inputs.github_slack_user_map != ''
+      shell: bash
+      env:
+        SLACK_BOT_TOKEN: ${{ inputs.slack_bot_token }}
+        GITHUB_SLACK_USER_MAP: ${{ inputs.github_slack_user_map }}
+        GITHUB_USER: ${{ inputs.triggered_by }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        PR_URL: ${{ github.server_url }}/${{ github.repository }}/pull/${{ inputs.pr_number }}
+        PR_NUMBER: ${{ inputs.pr_number }}
+        REPO_NAME: ${{ github.repository }}
+        STATUS: ${{ inputs.status }}
+        EMOJI: ${{ inputs.status_emoji }}
+      run: python3 ${{ github.action_path }}/send_slack_dm.py
