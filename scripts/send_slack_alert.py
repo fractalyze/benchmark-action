@@ -74,8 +74,9 @@ def _build_metric_block(
     # Sparkline from dashboard history
     if dashboard_token and dashboard_repo:
         first_metric = next(iter(metrics))
+        dash_name = name.split("/")[0]
         _commits, values = load_history_from_dashboard(
-            dashboard_token, dashboard_repo, source_repo, name, device,
+            dashboard_token, dashboard_repo, source_repo, dash_name, device,
             metric=first_metric, limit=15,
         )
         if values:
@@ -321,7 +322,7 @@ def main() -> int:
         },
     ]
     if sorted_benchmarks:
-        first_name = sorted_benchmarks[0][0]
+        first_name = sorted_benchmarks[0][0].split("/")[0]
         dash_url = build_dashboard_url(source_repo, device, first_name)
         action_elements.append({
             "type": "button",
