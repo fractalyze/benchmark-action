@@ -41,6 +41,38 @@ def get_memory_info() -> tuple[float, int, int]:
     return usage_ratio, used_mb, total_mb
 
 
+def get_isolation_info() -> dict | None:
+    """Build isolation metadata from action inputs.
+
+    Isolation parameters (cpuset, memory, gpu, network, image) are passed
+    as environment variables from the action inputs. This is explicit and
+    reliable — the caller knows the Docker flags, so there's no need for
+    runtime detection from inside a container we don't control.
+    """
+    cpuset = os.environ.get("ISOLATION_CPUSET", "")
+    memory_gb = os.environ.get("ISOLATION_MEMORY_GB", "")
+    gpu = os.environ.get("ISOLATION_GPU", "")
+    network = os.environ.get("ISOLATION_NETWORK", "")
+    image = os.environ.get("ISOLATION_IMAGE", "")
+
+    if not any([cpuset, memory_gb, gpu, network, image]):
+        return None
+
+    isolation: dict = {"method": "docker-cgroup"}
+    if cpuset:
+        isolation["cpuset"] = cpuset
+    if memory_gb:
+        isolation["memory_limit_gb"] = float(memory_gb)
+    if gpu:
+        isolation["gpu"] = gpu
+    if network:
+        isolation["network"] = network
+    if image:
+        isolation["image"] = image
+
+    return isolation
+
+
 def main() -> int:
     cpu_threshold = float(os.environ.get("CPU_LOAD_THRESHOLD", "0.80"))
     memory_threshold = float(os.environ.get("MEMORY_THRESHOLD", "0.80"))
@@ -66,6 +98,7 @@ def main() -> int:
             "threshold": memory_threshold,
             "warning": mem_usage > memory_threshold,
         },
+        "isolation": get_isolation_info(),
     }
 
     Path(output_file).write_text(json.dumps(result, indent=2) + "\n")

@@ -60,6 +60,26 @@ inputs:
     description: "Memory usage threshold (0-1) above which to emit warning"
     required: false
     default: "0.80"
+  isolation_cpuset:
+    description: "Docker --cpuset-cpus value if running in container (e.g., 0-15)"
+    required: false
+    default: ""
+  isolation_memory_gb:
+    description: "Docker --memory value in GB if running in container (e.g., 32)"
+    required: false
+    default: ""
+  isolation_gpu:
+    description: "Docker --gpus value if running in container (e.g., all)"
+    required: false
+    default: ""
+  isolation_network:
+    description: "Docker --network value if running in container (e.g., host)"
+    required: false
+    default: ""
+  isolation_image:
+    description: "Docker image used for isolation (e.g., ghcr.io/fractalyze/benchmark-runner:latest)"
+    required: false
+    default: ""
   rolling_window:
     description: "Number of historical results to average for baseline"
     required: false
@@ -112,6 +132,11 @@ runs:
         CPU_LOAD_THRESHOLD: ${{ inputs.cpu_load_threshold }}
         MEMORY_THRESHOLD: ${{ inputs.memory_threshold }}
         SYSTEM_LOAD_OUTPUT: system_load.json
+        ISOLATION_CPUSET: ${{ inputs.isolation_cpuset }}
+        ISOLATION_MEMORY_GB: ${{ inputs.isolation_memory_gb }}
+        ISOLATION_GPU: ${{ inputs.isolation_gpu }}
+        ISOLATION_NETWORK: ${{ inputs.isolation_network }}
+        ISOLATION_IMAGE: ${{ inputs.isolation_image }}
       run: python3 ${{ github.action_path }}/scripts/check_system_load.py
 
     - name: Run benchmark
