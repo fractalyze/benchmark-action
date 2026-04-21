@@ -173,7 +173,9 @@ runs:
       run: python3 ${{ github.action_path }}/scripts/push_to_dashboard.py
 
     - name: Send Slack alert
-      if: github.event_name == 'push' && (failure() || cancelled() || steps.regression.outputs.has_significant_change == 'true')
+      if: >-
+        (github.event_name == 'push' || github.event_name == 'schedule') &&
+        (failure() || cancelled() || steps.regression.outputs.has_significant_change == 'true')
       shell: bash
       env:
         SLACK_WEBHOOK_URL: ${{ inputs.slack_webhook }}
