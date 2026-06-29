@@ -13,7 +13,9 @@ from __future__ import annotations
 import base64
 import json
 import os
+import socket
 import sys
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -35,6 +37,26 @@ if not _source_repo:
     _source_repo = gh_repo.split("/")[-1] if gh_repo else ""
 SOURCE_REPO = _source_repo
 
+# ---------------------------------------------------------------------------
+# Networking / retry tuning
+# ---------------------------------------------------------------------------
+
+# Per-request socket timeout. A healthy GitHub API call returns in well under a
+# second; this only bounds a stalled connection so one bad request can never
+# wedge the job indefinitely (a timeout-less urlopen once hung a scheduled run
+# for 2h+ until it was cancelled by hand).
+_API_TIMEOUT_S = 120
+# Retries for a transient per-request failure (stall, connection error, 429/5xx).
+_MAX_REQUEST_RETRIES = 3
+# Rounds of rebuild-and-retry when the ref moved under us (HTTP 422); each round
+# re-reads the latest dashboard state so a concurrent writer is never clobbered.
+_MAX_PUSH_RETRIES = 5
+# Exponential backoff base: sleeps 2s, 4s, 8s, ... between attempts.
+_BACKOFF_BASE_S = 2
+# HTTP statuses worth retrying as-is (server-side / rate-limit hiccups). A 4xx
+# outside this set (e.g. 404, 422) is meaningful and must reach the caller.
+_RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
+
 
 # ---------------------------------------------------------------------------
 # GitHub Git API helpers
@@ -49,13 +71,46 @@ def _api_headers() -> dict[str, str]:
     }
 
 
+def _open(req: urllib.request.Request) -> dict:
+    """Send a request with a bounded timeout, retrying transient failures.
+
+    Retries a stalled/timed-out connection, a connection-level error, and a
+    retryable server status (429/5xx) with exponential backoff. An HTTP error
+    outside ``_RETRYABLE_STATUS`` (e.g. 404, 422) propagates immediately so the
+    caller can act on it.
+    """
+    last_err: Exception | None = None
+    for attempt in range(_MAX_REQUEST_RETRIES):
+        try:
+            with urllib.request.urlopen(req, timeout=_API_TIMEOUT_S) as resp:
+                return json.loads(resp.read())
+        except urllib.error.HTTPError as e:
+            if e.code not in _RETRYABLE_STATUS:
+                raise
+            last_err = e
+        except (
+            urllib.error.URLError,
+            ConnectionError,
+            socket.timeout,
+            TimeoutError,
+        ) as e:
+            # Connection-level failure or a read timeout. A connect-time error
+            # arrives wrapped in URLError, but a connection reset mid-read
+            # (resp.read()) surfaces as a bare ConnectionError; socket.timeout
+            # is an alias of TimeoutError.
+            last_err = e
+        if attempt < _MAX_REQUEST_RETRIES - 1:
+            time.sleep(_BACKOFF_BASE_S * (2**attempt))
+    assert last_err is not None
+    raise last_err
+
+
 def _api(method: str, endpoint: str, body: dict | None = None) -> dict:
     """Call the GitHub API and return parsed JSON response."""
     url = f"https://api.github.com/repos/{DASHBOARD_REPO}/{endpoint}"
     data = json.dumps(body).encode() if body else None
     req = urllib.request.Request(url, data=data, headers=_api_headers(), method=method)
-    with urllib.request.urlopen(req) as resp:
-        return json.loads(resp.read())
+    return _open(req)
 
 
 def get_file_content(path: str) -> tuple[dict | None, str | None]:
@@ -66,14 +121,13 @@ def get_file_content(path: str) -> tuple[dict | None, str | None]:
     url = f"https://api.github.com/repos/{DASHBOARD_REPO}/contents/{path}"
     req = urllib.request.Request(url, headers=_api_headers())
     try:
-        with urllib.request.urlopen(req) as resp:
-            data = json.loads(resp.read())
-            content = base64.b64decode(data["content"]).decode()
-            return json.loads(content), data["sha"]
+        data = _open(req)
     except urllib.error.HTTPError as e:
         if e.code == 404:
             return None, None
         raise
+    content = base64.b64decode(data["content"]).decode()
+    return json.loads(content), data["sha"]
 
 
 # ---------------------------------------------------------------------------
@@ -82,7 +136,7 @@ def get_file_content(path: str) -> tuple[dict | None, str | None]:
 
 
 def push_atomic_commit(files: dict[str, dict], message: str) -> None:
-    """Push all files in a single atomic git commit.
+    """Push all files in a single atomic git commit on top of current HEAD.
 
     Args:
         files: mapping of ``path -> json_content`` to create/update.
@@ -90,6 +144,9 @@ def push_atomic_commit(files: dict[str, dict], message: str) -> None:
 
     Flow: get ref → get base tree → create blobs → create tree →
           create commit → update ref.
+
+    Raises ``urllib.error.HTTPError`` with code 422 if the ref moved under us
+    between reading HEAD and updating it; the caller rebuilds and retries.
     """
     # 1. Get HEAD ref
     ref_data = _api("GET", "git/ref/heads/main")
@@ -184,36 +241,34 @@ def normalize_metrics(bench: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Main
+# Result assembly
 # ---------------------------------------------------------------------------
 
 
-def main() -> int:
-    # 1. Read benchmark results
-    with open(RESULTS_FILE) as f:
-        results = json.load(f)
+def build_files_to_push(
+    results: dict, timestamp: str
+) -> tuple[dict[str, dict], list[str]]:
+    """Read the current dashboard files and layer this run's results on top.
 
+    Returns ``(files_to_push, benchmark_keys)``. This performs a fresh
+    read-modify-write against the live dashboard state, so it is re-run on every
+    push attempt: if a concurrent writer committed between our read and our ref
+    update (HTTP 422), the next attempt sees their results and preserves them
+    rather than clobbering them.
+    """
     raw_benchmarks = results.get("benchmarks", {})
-    if not raw_benchmarks:
-        print("No benchmarks found in results file")
-        return 1
-
     raw_platform = (
         results.get("metadata", {}).get("platform") or results.get("platform") or {}
     )
     platform = normalize_platform(raw_platform)
 
     commit_sha = GITHUB_SHA
-    timestamp = datetime.now(timezone.utc).isoformat()
-
-    # 2. Build per-benchmark result entries
     new_result = {
         "commit": commit_sha,
         "timestamp": timestamp,
         "platform": platform,
     }
 
-    # 3. Load existing benchmark files & manifest, prepare updates
     files_to_push: dict[str, dict] = {}
     benchmark_keys: list[str] = []
 
@@ -256,7 +311,7 @@ def main() -> int:
 
         files_to_push[file_path] = existing
 
-    # 4. Update manifest
+    # Update manifest
     manifest_path = "data-v2/manifest.json"
     manifest, _ = get_file_content(manifest_path)
 
@@ -270,16 +325,62 @@ def main() -> int:
 
     files_to_push[manifest_path] = manifest
 
-    # 5. Push all files in one atomic commit
+    return files_to_push, benchmark_keys
+
+
+def push_results(results: dict, timestamp: str, message: str) -> tuple[int, list[str]]:
+    """Build and push results, rebuilding on a ref-race (HTTP 422).
+
+    Returns ``(num_benchmark_files, benchmark_keys)`` on success. Raises if the
+    ref keeps moving after ``_MAX_PUSH_RETRIES`` rounds, or on any non-422 error.
+    """
+    last_err: urllib.error.HTTPError | None = None
+    for attempt in range(_MAX_PUSH_RETRIES):
+        files_to_push, benchmark_keys = build_files_to_push(results, timestamp)
+        try:
+            push_atomic_commit(files_to_push, message)
+        except urllib.error.HTTPError as e:
+            if e.code != 422:
+                raise
+            # The ref moved under us — a concurrent dashboard writer won the
+            # race. Back off, then rebuild against their new HEAD so we layer
+            # on top of (not over) their results.
+            last_err = e
+            if attempt < _MAX_PUSH_RETRIES - 1:
+                time.sleep(_BACKOFF_BASE_S * (2**attempt))
+            continue
+        return len(files_to_push) - 1, benchmark_keys
+    raise RuntimeError(
+        f"dashboard push failed after {_MAX_PUSH_RETRIES} ref-race retries"
+    ) from last_err
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+
+def main() -> int:
+    # 1. Read benchmark results
+    with open(RESULTS_FILE) as f:
+        results = json.load(f)
+
+    raw_benchmarks = results.get("benchmarks", {})
+    if not raw_benchmarks:
+        print("No benchmarks found in results file")
+        return 1
+
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    # 2. Push all files in one atomic commit, rebuilding on a ref-race.
+    commit_sha = GITHUB_SHA
     short_sha = commit_sha[:7] if commit_sha else "unknown"
     bench_names = ", ".join(sorted(raw_benchmarks.keys()))
-    commit_msg = (
-        f"chore: update {SOURCE_REPO} benchmarks ({short_sha})\n\n{bench_names}"
-    )
+    commit_msg = f"chore: update {SOURCE_REPO} benchmarks ({short_sha})\n\n{bench_names}"
 
-    push_atomic_commit(files_to_push, commit_msg)
+    num_files, benchmark_keys = push_results(results, timestamp, commit_msg)
 
-    print(f"Pushed {len(files_to_push) - 1} benchmark file(s) + manifest")
+    print(f"Pushed {num_files} benchmark file(s) + manifest")
     for key in sorted(benchmark_keys):
         print(f"  data-v2/{key}.json")
 
